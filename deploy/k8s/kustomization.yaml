@@ -1,0 +1,22 @@
+# kubectl apply -k deploy/k8s
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - 00-namespace.yaml
+  - 10-config.yaml
+  - 20-postgres.yaml
+  - 25-rabbitmq.yaml
+  - 30-users.yaml
+  - 31-articles.yaml
+  - 32-comments.yaml
+  - 33-gateway.yaml
+  - 40-web.yaml
+  - 50-ops.yaml
+# Script do k6 vira ConfigMap; o ops monta nele o Job de carga.
+configMapGenerator:
+  - name: k6-script
+    namespace: socialclone
+    files:
+      - k6/load.js
+generatorOptions:
+  disableNameSuffixHash: true

@@ -1,0 +1,17 @@
+[package]
+name = "comments"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+platform = { workspace = true, features = ["bus"] }
+anyhow.workspace = true
+axum.workspace = true
+mimalloc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+time.workspace = true
+tokio.workspace = true
+tracing.workspace = true

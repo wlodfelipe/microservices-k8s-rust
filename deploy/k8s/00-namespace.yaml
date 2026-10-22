@@ -1,0 +1,41 @@
+# Tudo da aplicação mora no namespace "socialclone".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: socialclone
+  labels:
+    app.kubernetes.io/part-of: socialclone
+---
+# Teto de recursos do namespace: a aplicação inteira não passa disso, não importa quantos
+# pods o HPA crie. Para simular "a app roda em X CPU / Y RAM", ajuste os valores aqui
+# (vale na hora, sem recriar o cluster) ou o --cpus/--memory do minikube (o nó inteiro).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: app-budget
+  namespace: socialclone
+spec:
+  hard:
+    requests.cpu: "3"
+    requests.memory: 3Gi
+    # soma dos limites com todos os HPAs no máximo (~21,5); passa do nó, e tudo bem:
+    # o limite é teto por pod, o que reserva CPU de verdade é o request
+    limits.cpu: "24"
+    limits.memory: 5Gi
+    pods: "40"
+---
+# Valores padrão para qualquer container que não declare recursos.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: socialclone
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 64Mi

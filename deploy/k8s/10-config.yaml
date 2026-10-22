@@ -1,0 +1,18 @@
+# Configuração não sensível, compartilhada pelos serviços Rust.
+# As senhas e a chave do JWT ficam no Secret "app-secrets" (criado pelo scripts/deploy.sh
+# com valores aleatórios; veja secrets.example.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: socialclone
+data:
+  RUST_LOG: "info,tower_http=warn,sqlx=warn"
+  LOG_FORMAT: "json"
+  DB_MAX_CONNECTIONS: "10"
+  # O gateway fala com os Services *headless* (um registro DNS por pod pronto) e faz
+  # o balanceamento por requisição. Ver crates/platform/src/upstream.rs.
+  USERS_UPSTREAM: "users-headless.socialclone.svc.cluster.local:8080"
+  ARTICLES_UPSTREAM: "articles-headless.socialclone.svc.cluster.local:8080"
+  COMMENTS_UPSTREAM: "comments-headless.socialclone.svc.cluster.local:8080"
+  UPSTREAM_TIMEOUT_MS: "5000"

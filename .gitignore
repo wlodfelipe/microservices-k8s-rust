@@ -1,0 +1,6 @@
+target/
+node_modules/
+web/dist/
+*.tar
+.env
+enunciado_facul.txt

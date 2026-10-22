@@ -1,0 +1,8 @@
+$ kubectl -n socialclone delete pod articles-5f6d98c7cb-9ns6p
+pod "articles-5f6d98c7cb-9ns6p" deleted from socialclone namespace
+
+$ kubectl -n socialclone get pods -l app=articles   (6 s depois)
+NAME                        READY   STATUS        RESTARTS   AGE
+articles-5f6d98c7cb-9ns6p   1/1     Terminating   0          5m30s
+articles-5f6d98c7cb-bknxf   1/1     Running       0          6s
+articles-5f6d98c7cb-h6dbp   1/1     Running       0          5m37s

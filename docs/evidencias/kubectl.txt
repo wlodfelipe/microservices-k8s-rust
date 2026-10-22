@@ -1,0 +1,95 @@
+$ kubectl get nodes -o wide
+NAME          STATUS   ROLES           AGE   VERSION   INTERNAL-IP    EXTERNAL-IP   OS-IMAGE                         KERNEL-VERSION                   CONTAINER-RUNTIME
+socialclone   Ready    control-plane   79m   v1.37.0   192.168.49.2   <none>        Debian GNU/Linux 12 (bookworm)   7.1.10-200.fc44.x86_64 (amd64)   containerd://2.3.4
+
+$ kubectl -n socialclone get pods -o wide
+NAME                        READY   STATUS      RESTARTS   AGE     IP            NODE          NOMINATED NODE   READINESS GATES
+articles-5f6d98c7cb-9ns6p   1/1     Running     0          5m23s   10.244.0.75   socialclone   <none>           <none>
+articles-5f6d98c7cb-h6dbp   1/1     Running     0          5m30s   10.244.0.70   socialclone   <none>           <none>
+comments-74ddd95cfb-mvz6b   1/1     Running     0          5m23s   10.244.0.74   socialclone   <none>           <none>
+comments-74ddd95cfb-qtw84   1/1     Running     0          5m30s   10.244.0.71   socialclone   <none>           <none>
+gateway-77c7b599d-84t5b     1/1     Running     0          5m23s   10.244.0.76   socialclone   <none>           <none>
+gateway-77c7b599d-8wdjn     1/1     Running     0          82s     10.244.0.83   socialclone   <none>           <none>
+gateway-77c7b599d-wg6zh     1/1     Running     0          82s     10.244.0.82   socialclone   <none>           <none>
+gateway-77c7b599d-xwkmq     1/1     Running     0          5m30s   10.244.0.72   socialclone   <none>           <none>
+k6-1792539515-fv5cr         0/1     Completed   0          2m7s    10.244.0.81   socialclone   <none>           <none>
+ops-5df48b575f-shjsp        1/1     Running     0          5m30s   10.244.0.73   socialclone   <none>           <none>
+postgres-55548c7f7d-v55zq   1/1     Running     0          33m     10.244.0.43   socialclone   <none>           <none>
+users-865dd5fd86-24pmp      1/1     Running     0          3m22s   10.244.0.79   socialclone   <none>           <none>
+users-865dd5fd86-5st9k      1/1     Running     0          5m30s   10.244.0.69   socialclone   <none>           <none>
+users-865dd5fd86-rcpn6      1/1     Running     0          3m22s   10.244.0.80   socialclone   <none>           <none>
+users-865dd5fd86-rgmfl      1/1     Running     0          5m23s   10.244.0.77   socialclone   <none>           <none>
+web-7d485c6d6b-cqxmb        1/1     Running     0          33m     10.244.0.46   socialclone   <none>           <none>
+web-7d485c6d6b-ntt7w        1/1     Running     0          33m     10.244.0.48   socialclone   <none>           <none>
+
+$ kubectl -n socialclone get services
+NAME                TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
+articles            ClusterIP   10.102.179.114   <none>        8080/TCP       56m
+articles-headless   ClusterIP   None             <none>        8080/TCP       56m
+comments            ClusterIP   10.100.135.134   <none>        8080/TCP       56m
+comments-headless   ClusterIP   None             <none>        8080/TCP       56m
+gateway             ClusterIP   10.102.179.31    <none>        80/TCP         56m
+gateway-headless    ClusterIP   None             <none>        8080/TCP       56m
+ops                 ClusterIP   10.110.169.58    <none>        8080/TCP       56m
+postgres            ClusterIP   10.96.210.209    <none>        5432/TCP       56m
+users               ClusterIP   10.100.15.176    <none>        8080/TCP       56m
+users-headless      ClusterIP   None             <none>        8080/TCP       56m
+web                 NodePort    10.103.149.166   <none>        80:30080/TCP   56m
+
+$ kubectl -n socialclone get deployments -o wide
+NAME       READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES                                 SELECTOR
+articles   2/2     2            2           56m   articles     localhost/socialclone/articles:v1      app=articles
+comments   2/2     2            2           56m   comments     localhost/socialclone/comments:v1      app=comments
+gateway    4/4     4            4           56m   gateway      localhost/socialclone/gateway:v1       app=gateway
+ops        1/1     1            1           56m   ops          localhost/socialclone/ops:v1           app=ops
+postgres   1/1     1            1           56m   postgres     docker.io/library/postgres:17-alpine   app=postgres
+users      4/4     4            4           56m   users        localhost/socialclone/users:v1         app=users
+web        2/2     2            2           56m   web          localhost/socialclone/web:v1           app=web
+
+$ kubectl -n socialclone get hpa,pdb,resourcequota,limitrange
+NAME                                          REFERENCE            TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/gateway   Deployment/gateway   cpu: 153%/70%   2         5         4          56m
+horizontalpodautoscaler.autoscaling/users     Deployment/users     cpu: 149%/70%   2         4         4          56m
+
+NAME                                  MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
+poddisruptionbudget.policy/articles   1               N/A               1                     56m
+poddisruptionbudget.policy/comments   1               N/A               1                     56m
+poddisruptionbudget.policy/gateway    1               N/A               3                     56m
+poddisruptionbudget.policy/users      1               N/A               3                     56m
+poddisruptionbudget.policy/web        1               N/A               1                     56m
+
+NAME                       REQUEST                                                          LIMIT                                              AGE
+resourcequota/app-budget   pods: 16/40, requests.cpu: 1350m/3, requests.memory: 696Mi/3Gi   limits.cpu: 13500m/16, limits.memory: 2560Mi/5Gi   56m
+
+NAME                  CREATED AT
+limitrange/defaults   2026-10-20T22:44:01Z
+
+$ kubectl -n socialclone get configmaps,secrets
+NAME                         DATA   AGE
+configmap/app-config         7      56m
+configmap/k6-script          1      56m
+configmap/kube-root-ca.crt   1      56m
+configmap/postgres-init      1      56m
+
+NAME                 TYPE     DATA   AGE
+secret/app-secrets   Opaque   8      56m
+
+$ kubectl -n socialclone top pods
+NAME                        CPU(cores)   MEMORY(bytes)   
+articles-5f6d98c7cb-9ns6p   109m         5Mi             
+articles-5f6d98c7cb-h6dbp   109m         7Mi             
+comments-74ddd95cfb-mvz6b   32m          2Mi             
+comments-74ddd95cfb-qtw84   32m          4Mi             
+gateway-77c7b599d-84t5b     159m         6Mi             
+gateway-77c7b599d-8wdjn     131m         6Mi             
+gateway-77c7b599d-wg6zh     128m         4Mi             
+gateway-77c7b599d-xwkmq     147m         10Mi            
+ops-5df48b575f-shjsp        21m          27Mi            
+postgres-55548c7f7d-v55zq   1177m        202Mi           
+users-865dd5fd86-24pmp      147m         21Mi            
+users-865dd5fd86-5st9k      144m         23Mi            
+users-865dd5fd86-rcpn6      155m         11Mi            
+users-865dd5fd86-rgmfl      153m         20Mi            
+web-7d485c6d6b-cqxmb        125m         12Mi            
+web-7d485c6d6b-ntt7w        133m         12Mi            
+

@@ -1,0 +1,30 @@
+[package]
+name = "platform"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+jsonwebtoken.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+sqlx = { workspace = true, optional = true }
+lapin = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[features]
+db = ["dep:sqlx"]
+# Conexão com o RabbitMQ (sem banco): o gateway usa para assinar eventos ao vivo.
+amqp = ["dep:lapin", "dep:futures"]
+# Mensageria (RabbitMQ) com outbox/inbox no Postgres do serviço.
+bus = ["db", "amqp"]

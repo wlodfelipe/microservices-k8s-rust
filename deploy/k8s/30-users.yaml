@@ -1,0 +1,194 @@
+# Serviço interno: só o gateway chama. Dono do banco users_db.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users
+  namespace: socialclone
+  labels:
+    app: users
+    tier: backend
+    app.kubernetes.io/part-of: socialclone
+  annotations:
+    # Versões que o monitor oferece no botão "subir versão" (cada uma é uma tag de imagem).
+    socialclone/versions: "v1,v2,v3"
+    socialclone/description: "Cadastro, login (JWT), perfis e seguidores"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  # Rolling update sem indisponibilidade: sobe 1 pod novo por vez (maxSurge) e só tira um
+  # antigo quando o novo está pronto (maxUnavailable 0) e estável por 5 s (minReadySeconds).
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  minReadySeconds: 5
+  # Se a versão nova não fica pronta em 60 s, o rollout é marcado como travado
+  # (ProgressDeadlineExceeded) e os pods antigos continuam atendendo.
+  progressDeadlineSeconds: 60
+  selector:
+    matchLabels:
+      app: users
+  template:
+    metadata:
+      labels:
+        app: users
+        tier: backend
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: users
+          image: localhost/socialclone/users:v1
+          # Imagens são construídas localmente e carregadas no minikube (scripts/build-images.sh).
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: app-config
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: USERS_DATABASE_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: JWT_SECRET
+          # Pronto para receber tráfego? (consulta o banco; v3 nunca fica pronta)
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 2
+          # Processo vivo? Se travar, o kubelet reinicia o container.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Antes do SIGTERM: segue atendendo por 8 s enquanto o pod sai dos endpoints e
+          # o DNS headless (TTL 5 s) é atualizado nos clientes. Depois o processo drena e sai.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 8
+          resources:
+            requests:
+              cpu: 100m
+              memory: 48Mi
+            limits:
+              cpu: "1"
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+# ClusterIP: um IP virtual estável, balanceado pelo kube-proxy (por conexão).
+apiVersion: v1
+kind: Service
+metadata:
+  name: users
+  namespace: socialclone
+  labels:
+    app: users
+spec:
+  selector:
+    app: users
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Headless: o DNS devolve o IP de cada pod pronto. O gateway usa para balancear por requisição.
+apiVersion: v1
+kind: Service
+metadata:
+  name: users-headless
+  namespace: socialclone
+  labels:
+    app: users
+spec:
+  clusterIP: None
+  selector:
+    app: users
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Durante manutenção voluntária (drain de nó etc.) sempre sobra pelo menos 1 pod.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: users
+  namespace: socialclone
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: users
+---
+# Escala automática pela CPU (precisa do metrics-server: minikube addons enable metrics-server).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: users
+  namespace: socialclone
+  annotations:
+    # mínimo original: o botão "voltar ao automático" do monitor devolve o HPA para cá
+    socialclone/default-min: "2"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: users
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  # Sobe rápido (sem janela: dobra ou +2 pods a cada 15 s, o que for maior) e desce devagar
+  # (2 min sem precisar dos pods, depois 1 pod a cada 30 s) até voltar ao mínimo.
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 120
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 30

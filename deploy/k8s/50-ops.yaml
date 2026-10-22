@@ -1,0 +1,155 @@
+# "ops": backend da aba Monitor. Lê o estado do namespace e executa as ações da demo
+# (trocar versão, escalar, excluir pods, rodar k6). Usa um ServiceAccount próprio com
+# permissões mínimas, restritas ao namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ops
+  namespace: socialclone
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ops
+  namespace: socialclone
+rules:
+  - apiGroups: [""]
+    resources: [pods, events, services, resourcequotas]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, deployments/scale]
+    verbs: [patch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, patch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, create, delete]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ops
+  namespace: socialclone
+subjects:
+  - kind: ServiceAccount
+    name: ops
+    namespace: socialclone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ops
+---
+# Leitura dos nós (capacidade e uso de CPU/memória) é cluster-wide, só leitura.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: socialclone-ops-nodes
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list]
+  - apiGroups: [metrics.k8s.io]
+    resources: [nodes]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: socialclone-ops-nodes
+subjects:
+  - kind: ServiceAccount
+    name: ops
+    namespace: socialclone
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: socialclone-ops-nodes
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ops
+  namespace: socialclone
+  labels:
+    app: ops
+    tier: control
+    app.kubernetes.io/part-of: socialclone
+  annotations:
+    socialclone/description: "Plano de controle da demo (aba Monitor)"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ops
+  template:
+    metadata:
+      labels:
+        app: ops
+        tier: control
+    spec:
+      serviceAccountName: ops
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: ops
+          image: localhost/socialclone/ops:v1
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: K6_TARGET
+              value: http://web.socialclone.svc.cluster.local
+            # API de gestão do RabbitMQ (filas e taxas no painel de mensageria)
+            - name: RABBITMQ_MGMT
+              value: http://rabbitmq.socialclone.svc.cluster.local:15672
+          envFrom:
+            - secretRef:
+                name: rabbitmq-secrets
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 24Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ops
+  namespace: socialclone
+spec:
+  selector:
+    app: ops
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -1,0 +1,141 @@
+# RabbitMQ: barramento de eventos entre os serviços (exchange topic "conduit.events").
+#
+#   articles ──article.deleted──▶ [comments.article-events] ──▶ comments (apaga os comentários)
+#   comments ──comment.*────────▶ [articles.comment-events] ──▶ articles (contador)
+#
+# Os serviços publicam a partir de uma outbox no próprio banco, então o RabbitMQ pode cair
+# sem derrubar a API: os eventos esperam na outbox e saem quando ele volta.
+# Usuário e senha ficam no Secret "rabbitmq-secrets" (criado pelo scripts/deploy.sh).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+  namespace: socialclone
+data:
+  rabbitmq.conf: |
+    # o usuário padrão (do Secret) pode conectar de fora do localhost
+    loopback_users = none
+    # bloqueia publicadores antes de chegar no limite do container (512 MiB)
+    vm_memory_high_watermark.absolute = 320MiB
+    disk_free_limit.absolute = 200MB
+    # estatísticas da UI de gestão a cada 5 s (o monitor lê pela API HTTP)
+    collect_statistics_interval = 5000
+  enabled_plugins: |
+    [rabbitmq_management,rabbitmq_prometheus].
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-data
+  namespace: socialclone
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: socialclone
+  labels:
+    app: rabbitmq
+    tier: data
+  annotations:
+    socialclone/description: "RabbitMQ 4 (eventos entre os serviços)"
+spec:
+  replicas: 1
+  # Um nó só, com disco próprio: como o Postgres, nunca dois pods no mesmo volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+        tier: data
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: rabbitmq
+          image: docker.io/library/rabbitmq:4.1-management-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+            - name: prometheus
+              containerPort: 15692
+          env:
+            # Nome do nó fixo: o RabbitMQ guarda os dados numa pasta com o nome do nó, e o
+            # hostname do pod muda a cada recriação. Com um nó só, "localhost" basta.
+            - name: RABBITMQ_NODENAME
+              value: rabbit@localhost
+            # A VM do Erlang cria um scheduler por CPU do host (12) e fica girando em
+            # espera ativa. Com 2 schedulers e sem busy-wait ele cabe no orçamento de CPU.
+            - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
+              value: "+S 2:2 +sbwt none +sbwtdcpu none +sbwtdio none"
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secrets
+                  key: RABBITMQ_DEFAULT_USER
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secrets
+                  key: RABBITMQ_DEFAULT_PASS
+          readinessProbe:
+            tcpSocket:
+              port: amqp
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: amqp
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+            - name: config
+              mountPath: /etc/rabbitmq/conf.d/90-socialclone.conf
+              subPath: rabbitmq.conf
+            - name: config
+              mountPath: /etc/rabbitmq/enabled_plugins
+              subPath: enabled_plugins
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rabbitmq-data
+        - name: config
+          configMap:
+            name: rabbitmq-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: socialclone
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+    - name: management
+      port: 15672
+      targetPort: management

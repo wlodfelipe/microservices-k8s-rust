@@ -1,0 +1,90 @@
+# DNS do cluster, re-resolvido a cada 2 s.
+resolver ${NGINX_LOCAL_RESOLVERS} valid=2s ipv6=off;
+
+# Gateway pelo Service *headless*: o nginx resolve o nome, recebe o IP de cada pod pronto
+# e balanceia por requisição entre eles, com conexões keep-alive reaproveitadas
+# (`resolve`, nginx >= 1.27.3). Pelo ClusterIP com keep-alive, cada conexão ficaria presa
+# a um pod; sem keep-alive, cada requisição abriria uma conexão TCP nova.
+# Pod que sai do DNS (rolling update) deixa de receber requisição em até 2 s; o preStop de
+# 8 s do gateway cobre essa janela.
+upstream gateway {
+    zone gateway 64k;
+    server ${GATEWAY_UPSTREAM} resolve;
+    keepalive 128;
+    keepalive_timeout 30s;
+}
+
+server {
+    listen 8080 backlog=4096;
+    server_name _;
+    root /usr/share/nginx/html;
+
+    set $ops ${OPS_URL};
+
+    gzip on;
+    gzip_types application/json application/javascript text/css image/svg+xml;
+
+    location /api/ {
+        proxy_pass http://gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_next_upstream error timeout http_502;
+        proxy_next_upstream_tries 2;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 15s;
+    }
+
+    # Comentários ao vivo (WebSocket): conexão longa, com Upgrade, fora do keep-alive do
+    # bloco /api/. O gateway manda ping a cada 25 s, então 1 h sem dados só acontece se o
+    # navegador sumiu.
+    location ~ ^/api/articles/[^/]+/live$ {
+        proxy_pass http://gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    location /ops/ {
+        proxy_pass $ops;
+        proxy_set_header Host $host;
+        proxy_read_timeout 15s;
+    }
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok";
+    }
+
+    # Readiness: a imagem v3 traz o arquivo BROKEN e nunca fica pronta.
+    location = /ready {
+        access_log off;
+        default_type text/plain;
+        if (-f /usr/share/nginx/html/BROKEN) {
+            return 503 "broken";
+        }
+        return 200 "ready";
+    }
+
+    location = /version.json {
+        add_header Cache-Control "no-store";
+        add_header X-Served-By $hostname;
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # SPA: qualquer rota cai no index.html.
+    location / {
+        add_header Cache-Control "no-cache";
+        add_header X-Served-By $hostname;
+        try_files $uri /index.html;
+    }
+}

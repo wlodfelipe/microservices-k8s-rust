@@ -1,0 +1,123 @@
+# PostgreSQL único com um banco e um usuário por serviço ("database per service" lógico):
+# users_svc só enxerga users_db, e assim por diante. Nenhum serviço lê a tabela do outro.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: socialclone
+data:
+  init.sh: |
+    #!/bin/sh
+    set -e
+    for svc in users articles comments; do
+      pw_var="$(echo "$svc" | tr a-z A-Z)_DB_PASSWORD"
+      pw="$(eval echo "\$$pw_var")"
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<SQL
+    CREATE ROLE ${svc}_svc LOGIN PASSWORD '${pw}';
+    CREATE DATABASE ${svc}_db OWNER ${svc}_svc;
+    REVOKE ALL ON DATABASE ${svc}_db FROM PUBLIC;
+    SQL
+    done
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: socialclone
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: socialclone
+  labels:
+    app: postgres
+    tier: data
+  annotations:
+    socialclone/description: "PostgreSQL 17 (um banco por serviço)"
+spec:
+  replicas: 1
+  # Banco com disco próprio: nunca dois pods ao mesmo tempo no mesmo volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tier: data
+    spec:
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:17-alpine
+          imagePullPolicy: IfNotPresent
+          args:
+            - -c
+            - max_connections=200
+            - -c
+            - shared_buffers=128MB
+            # Demo: confirma o commit sem esperar o fsync do WAL. Perde no máximo ~600 ms
+            # de transações se a VM cair (restart do pod não perde nada). Em produção: on.
+            - -c
+            - synchronous_commit=off
+          ports:
+            - name: pg
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          envFrom:
+            - secretRef:
+                name: app-secrets
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 200m
+              memory: 192Mi
+            limits:
+              cpu: "2"
+              memory: 768Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+        - name: init
+          configMap:
+            name: postgres-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: socialclone
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: pg
