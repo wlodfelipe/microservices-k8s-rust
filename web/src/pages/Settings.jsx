@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import Errors from '../components/Errors';
+import { Avatar } from '../components/Postal';
+import Icon from '../components/Icon';
 
 export default function Settings() {
   const { user, loading, setUser, signOut } = useAuth();
@@ -32,37 +34,42 @@ export default function Settings() {
   };
 
   return (
-    <div className="settings-page">
-      <div className="container page">
-        <div className="row">
-          <div className="col-md-6 offset-md-3 col-xs-12">
-            <h1 className="text-xs-center">Your Settings</h1>
-            <Errors error={error} />
-            <form onSubmit={submit}>
-              <fieldset>
-                <fieldset className="form-group">
-                  <input className="form-control" name="image" type="text" placeholder="URL of profile picture" value={form.image} onChange={set('image')} />
-                </fieldset>
-                <fieldset className="form-group">
-                  <input className="form-control form-control-lg" name="username" type="text" placeholder="Your Name" value={form.username} onChange={set('username')} />
-                </fieldset>
-                <fieldset className="form-group">
-                  <textarea className="form-control form-control-lg" name="bio" rows="8" placeholder="Short bio about you" value={form.bio} onChange={set('bio')} />
-                </fieldset>
-                <fieldset className="form-group">
-                  <input className="form-control form-control-lg" name="email" type="text" placeholder="Email" value={form.email} onChange={set('email')} />
-                </fieldset>
-                <fieldset className="form-group">
-                  <input className="form-control form-control-lg" name="password" type="password" placeholder="New Password" value={form.password} onChange={set('password')} />
-                </fieldset>
-                <button className="btn btn-lg btn-primary pull-xs-right" disabled={busy}>Update Settings</button>
-              </fieldset>
-            </form>
-            <hr />
-            <button className="btn btn-outline-danger" onClick={() => { signOut(); nav('/'); }}>Or click here to logout.</button>
+    <div className="wrap form-page">
+      <h1>Settings</h1>
+      <p className="sub">Your public profile and sign-in details.</p>
+      <form className="form" onSubmit={submit}>
+        <Errors error={error} />
+        <div className="field">
+          <label htmlFor="image">Profile picture URL</label>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <Avatar user={{ username: form.username, image: form.image }} size={42} />
+            <input id="image" className="input" name="image" type="url" placeholder="https://…" value={form.image} onChange={set('image')} />
           </div>
         </div>
-      </div>
+        <div className="field">
+          <label htmlFor="username">Username</label>
+          <input id="username" className="input" name="username" value={form.username} onChange={set('username')} />
+        </div>
+        <div className="field">
+          <label htmlFor="bio">Bio</label>
+          <textarea id="bio" className="input read" name="bio" rows="5" value={form.bio} onChange={set('bio')} />
+        </div>
+        <div className="field">
+          <label htmlFor="email">Email</label>
+          <input id="email" className="input" name="email" type="email" value={form.email} onChange={set('email')} />
+        </div>
+        <div className="field">
+          <label htmlFor="password">New password</label>
+          <input id="password" className="input" name="password" type="password" autoComplete="new-password" value={form.password} onChange={set('password')} />
+          <span className="hint">Leave empty to keep the current one.</span>
+        </div>
+        <div className="form-actions">
+          <span />
+          <button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Save settings'}</button>
+        </div>
+      </form>
+      <hr className="divider" />
+      <button className="btn btn-danger" onClick={() => { signOut(); nav('/'); }}><Icon name="out" /> Sign out</button>
     </div>
   );
 }

@@ -74,7 +74,7 @@ export function setup() {
     for (let j = 0; j < 4; j++) {
       const tags = [TAGS[(i + j) % TAGS.length], TAGS[(i * 3 + j) % TAGS.length]];
       http.post(`${API}/articles`, JSON.stringify({ article: {
-        title: `Artigo de carga ${i}-${j}`, description: 'gerado pelo k6', body: 'Lorem ipsum '.repeat(40), tagList: tags,
+        title: `Load test article ${i}-${j}`, description: 'Seeded by the k6 load test', body: 'Lorem ipsum '.repeat(40), tagList: tags,
       } }), auth(u.token));
     }
   }
@@ -115,12 +115,12 @@ function readFlow(token) {
 function writeFlow(me) {
   const p = auth(me.token);
   const created = http.post(`${API}/articles`, JSON.stringify({ article: {
-    title: `k6 ${__VU}-${__ITER}`, description: 'carga', body: 'Texto do artigo. '.repeat(20), tagList: [pick(TAGS)],
+    title: `Load test letter ${__VU}-${__ITER}`, description: 'Written by a k6 virtual user', body: 'This article was written by a k6 virtual user during a load test. '.repeat(8), tagList: [pick(TAGS)],
   } }), { ...p, tags: { name: 'POST /articles' } });
   check(created, { 'create 201': (r) => r.status === 201 });
   if (created.status !== 201) return;
   const slug = created.json('article.slug');
-  const c = http.post(`${API}/articles/${slug}/comments`, JSON.stringify({ comment: { body: 'Comentário do k6' } }),
+  const c = http.post(`${API}/articles/${slug}/comments`, JSON.stringify({ comment: { body: 'Comment from a k6 virtual user' } }),
     { ...p, tags: { name: 'POST /articles/:slug/comments' }, responseCallback: commentsOk });
   check(c, { 'comment 201 ou desativado': (r) => r.status === 201 || r.status === 503 });
   if (c.status === 503) commentsDisabled.add(1);

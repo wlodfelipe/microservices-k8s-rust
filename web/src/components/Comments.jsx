@@ -3,15 +3,18 @@ import { Link } from 'react-router-dom';
 import { api, formatDate } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import Errors from './Errors';
+import { Avatar, Stamp } from './Postal';
+import Icon from './Icon';
 
 // Seção de comentários. Ela é carregada separada do artigo: se o microserviço de
 // comentários estiver desligado, o gateway responde 503 {"errors":{"comments":["disabled"]}}
-// e só esta área mostra "Comentários desativados". O resto da página funciona normalmente.
+// e só esta área mostra "comments switched off". O resto da página funciona normalmente.
 // Enquanto estiver desativado, tenta de novo a cada 5 s e volta sozinho quando o serviço volta.
 //
 // Ao vivo: um WebSocket em /api/articles/:slug/live recebe os comentários novos e apagados
 // por outras pessoas. Se a conexão cai (pod do gateway saindo, RabbitMQ fora), reconecta
-// com espera crescente e recarrega a lista, para não perder nada do intervalo.
+// com espera crescente e recarrega a lista, para não perder nada do intervalo. Enquanto
+// reconecta, a faixa de chevrons do topo fica cinza (html[data-live]).
 
 // Estado da conexão: 'connecting' | 'live' | 'offline'
 function useLive(slug, onMessage, onReconnect) {
@@ -43,8 +46,15 @@ function useLive(slug, onMessage, onReconnect) {
     connect();
     return () => { closed = true; clearTimeout(timer); ws?.close(); };
   }, [slug]);
+
+  useEffect(() => {
+    document.documentElement.dataset.live = state === 'offline' ? 'reconnecting' : state;
+    return () => { delete document.documentElement.dataset.live; };
+  }, [state]);
   return state;
 }
+
+const LIVE_LABEL = { live: 'Live', offline: 'Reconnecting…', connecting: 'Connecting…' };
 
 export default function Comments({ slug }) {
   const { user } = useAuth();
@@ -55,14 +65,14 @@ export default function Comments({ slug }) {
   const [busy, setBusy] = useState(false);
   const [fresh, setFresh] = useState(() => new Set());
   const [articleGone, setArticleGone] = useState(false);
+  const [lastTry, setLastTry] = useState(null);
 
   const load = useCallback(async () => {
     try {
       const r = await api.comments(slug);
       setComments(r.comments); setDisabled(false); setError(null);
     } catch (e) {
-      if (e.commentsDisabled || e.status === 503 || e.status === 502 || e.status === 0) setDisabled(true);
-      else setError(e);
+      if (e.commentsDisabled || e.status === 503 || e.status === 502 || e.status === 0) { setDisabled(true); setLastTry(new Date()); } else setError(e);
     }
   }, [slug]);
 
@@ -89,6 +99,7 @@ export default function Comments({ slug }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!body.trim()) return;
     setBusy(true); setError(null);
     try {
       const r = await api.addComment(slug, body);
@@ -106,60 +117,62 @@ export default function Comments({ slug }) {
     } catch (err) { if (err.commentsDisabled) setDisabled(true); else setError(err); }
   };
 
-  if (disabled) {
-    return (
-      <div className="row">
-        <div className="col-xs-12 col-md-8 offset-md-2">
-          <div className="comments-disabled">
-            <i className="ion-chatbubbles" />
-            <div>
-              <strong>Comentários desativados</strong>
-              <p>O serviço de comentários está fora do ar no momento. O restante do site continua funcionando; os comentários voltam sozinhos quando o serviço voltar.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  const count = comments?.length;
   return (
-    <div className="row">
-      <div className="col-xs-12 col-md-8 offset-md-2">
-        <Errors error={error} />
-        <div className={`live-badge ${live}`} title="comentários de outras pessoas aparecem sem recarregar a página">
-          <span className="live-dot" />
-          {live === 'live' ? 'ao vivo' : live === 'offline' ? 'reconectando…' : 'conectando…'}
-        </div>
-        {articleGone && <div className="error-messages">Este artigo acabou de ser apagado pelo autor.</div>}
-        {user ? (
-          <form className="card comment-form" onSubmit={submit}>
-            <div className="card-block">
-              <textarea className="form-control" placeholder="Write a comment..." rows="3" value={body} onChange={(e) => setBody(e.target.value)} />
-            </div>
-            <div className="card-footer">
-              <img src={user.image || '/default-avatar.svg'} className="comment-author-img" alt="" />
-              <button className="btn btn-sm btn-primary" disabled={busy}>Post Comment</button>
-            </div>
-          </form>
-        ) : (
-          <p><Link to="/login">Sign in</Link> or <Link to="/register">sign up</Link> to add comments on this article.</p>
+    <section className="replies" aria-labelledby="replies-title">
+      <div className="replies-head">
+        <h2 id="replies-title">{disabled || count == null ? 'Comments' : count === 1 ? '1 comment' : `${count} comments`}</h2>
+        {!disabled && (
+          <span className={`live ${live === 'live' ? 'on' : live}`} title="Comments from other readers appear without reloading">
+            <span className="live-dot" />{LIVE_LABEL[live]}
+          </span>
         )}
-        {comments === null ? <div>Loading comments...</div> : comments.map((c) => (
-          <div className={`card${fresh.has(c.id) ? ' comment-fresh' : ''}`} key={c.id}>
-            <div className="card-block"><p className="card-text">{c.body}</p></div>
-            <div className="card-footer">
-              <Link to={`/profile/${c.author.username}`} className="comment-author">
-                <img src={c.author.image || '/default-avatar.svg'} className="comment-author-img" alt="" />
-              </Link>
-              &nbsp;<Link to={`/profile/${c.author.username}`} className="comment-author">{c.author.username}</Link>
-              <span className="date-posted">{formatDate(c.createdAt)}</span>
-              {user?.username === c.author.username && (
-                <span className="mod-options"><i className="ion-trash-a" onClick={() => remove(c.id)} /></span>
-              )}
-            </div>
-          </div>
-        ))}
       </div>
-    </div>
+
+      {disabled ? (
+        <div className="notice" role="status">
+          <Stamp kind="off">Returned</Stamp>
+          <div>
+            <h3>Comments are switched off</h3>
+            <p>The comments service has no pods running right now. Everything else on this page still works, and comments come back on their own when the service returns.</p>
+            <div className="meta">Service: comments · checking every 5 s{lastTry ? ` · last check ${lastTry.toLocaleTimeString('en-GB')}` : ''}</div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {error && <div style={{ marginBottom: 16 }}><Errors error={error} /></div>}
+          {articleGone && <div className="errors" role="alert" style={{ marginBottom: 16 }}>The author just deleted this article.</div>}
+          {user ? (
+            <form className="composer" onSubmit={submit}>
+              <label htmlFor="reply" className="sr-only">Write a comment</label>
+              <textarea id="reply" placeholder="Write a comment…" rows="3" value={body} onChange={(e) => setBody(e.target.value)} />
+              <div className="composer-foot">
+                <Avatar user={user} size={28} />
+                <button className="btn btn-sm" disabled={busy || !body.trim()}>{busy ? 'Posting…' : 'Post comment'}</button>
+              </div>
+            </form>
+          ) : (
+            <p className="signin-hint"><Link to="/login">Sign in</Link> or <Link to="/register">create an account</Link> to comment.</p>
+          )}
+          {comments === null ? (
+            <div className="reply" aria-hidden="true"><span className="skeleton line" /><span className="skeleton short" style={{ marginTop: 12 }} /></div>
+          ) : comments.length === 0 ? (
+            <p className="state">No comments yet. New ones appear here as they are posted.</p>
+          ) : comments.map((c) => (
+            <div className={`reply${fresh.has(c.id) ? ' fresh' : ''}`} key={c.id}>
+              <p>{c.body}</p>
+              <div className="reply-meta">
+                <Avatar user={c.author} size={24} />
+                <Link to={`/profile/${c.author.username}`}>{c.author.username}</Link>
+                <span>{formatDate(c.createdAt)}</span>
+                {user?.username === c.author.username && (
+                  <button className="btn btn-xs btn-ghost" onClick={() => remove(c.id)} aria-label="Delete comment"><Icon name="trash" size={14} /> Delete</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </section>
   );
 }

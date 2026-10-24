@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
+import { Mark } from './Postal';
 
-// Rodapé "ao vivo": mostra a versão que cada microserviço está respondendo agora.
-// Durante um rolling update dá para ver a versão mudar sem recarregar a página.
-// Se a versão do próprio front mudar (web v1 → v2), avisa e oferece recarregar.
-export default function Footer() {
+// Rodapé "ao vivo": a versão que cada microserviço está respondendo agora. Durante um
+// rolling update dá para ver a versão mudar sem recarregar a página. Se a versão do
+// próprio front mudar (web v1 → v2), avisa e oferece recarregar.
+const SERVICES = ['gateway', 'users', 'articles', 'comments'];
+
+export function useVersions() {
   const [versions, setVersions] = useState(null);
   const [web, setWeb] = useState(null);
   const loaded = useRef(null);
@@ -23,39 +26,45 @@ export default function Footer() {
           document.documentElement.dataset.webVersion = j.version;
         }
         setWeb(j.version);
-      } catch { /* ignore */ }
+      } catch { /* sem version.json no dev */ }
     };
     tick();
     const id = setInterval(tick, 3000);
     return () => { alive = false; clearInterval(id); };
   }, []);
 
-  const svc = (name) => {
-    const v = versions?.[name];
-    const ok = v?.ok;
-    return (
-      <span key={name} className={`svc-chip ${ok ? 'ok' : 'down'}`} title={ok ? `${v.pod || ''}` : 'indisponível'}>
-        {name} {ok ? v.version : 'off'}
-      </span>
-    );
-  };
+  return { versions, web, loadedWeb: loaded.current };
+}
 
+export default function Footer({ status }) {
+  const { versions, web, loadedWeb } = status;
   return (
-    <footer>
-      {web && loaded.current && web !== loaded.current && (
-        <div className="update-banner">
-          Nova versão do front-end publicada ({loaded.current} → {web}).{' '}
-          <button className="btn btn-sm btn-primary" onClick={() => window.location.reload()}>Recarregar</button>
+    <>
+      {web && loadedWeb && web !== loadedWeb && (
+        <div className="update-banner" role="status">
+          <div className="wrap">
+            A new front-end version is live ({loadedWeb} → {web}). You are still reading {loadedWeb}.
+            <button className="btn btn-sm" onClick={() => window.location.reload()}>Reload</button>
+          </div>
         </div>
       )}
-      <div className="container">
-        <Link to="/" className="logo-font">conduit</Link>
-        <span className="attribution">
-          RealWorld em microserviços Rust no Kubernetes ·{' '}
-          <span className={`svc-chip ok`}>web {loaded.current || '…'}</span>
-          {['gateway', 'users', 'articles', 'comments'].map(svc)}
-        </span>
-      </div>
-    </footer>
+      <footer className="footer">
+        <div className="wrap">
+          <Link to="/" className="wordmark"><Mark size={22} />conduit</Link>
+          <span className="footer-note">RealWorld as Rust microservices on Kubernetes</span>
+          <ul className="versions" aria-label="Versions answering right now">
+            <li>web <b>{loadedWeb || 'dev'}</b></li>
+            {SERVICES.map((name) => {
+              const v = versions?.[name];
+              return (
+                <li key={name} className={v?.ok ? '' : 'down'} title={v?.ok ? v.pod : 'not answering'}>
+                  {name} <b>{v ? (v.ok ? v.version : 'off') : '—'}</b>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </footer>
+    </>
   );
 }

@@ -4,6 +4,9 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { ArticleList } from '../components/ArticleList';
 import Errors from '../components/Errors';
+import Returned from '../components/Returned';
+import { Avatar } from '../components/Postal';
+import Icon from '../components/Icon';
 
 const PAGE = 5;
 
@@ -28,7 +31,10 @@ export default function Profile({ favorites }) {
     return () => { alive = false; };
   }, [username, favorites, page]);
 
-  if (error) return <div className="container page"><Errors error={error} /></div>;
+  if (error) {
+    if (error.status === 404) return <Returned message={`No one is called ${username} here.`} />;
+    return <div className="wrap form-page"><h1>Not delivered</h1><div style={{ marginTop: 20 }}><Errors error={error} /></div></div>;
+  }
   if (!profile) return null;
   const mine = user?.username === profile.username;
   const toggle = async () => {
@@ -38,38 +44,33 @@ export default function Profile({ favorites }) {
   };
 
   return (
-    <div className="profile-page">
-      <div className="user-info">
-        <div className="container">
-          <div className="row">
-            <div className="col-xs-12 col-md-10 offset-md-1">
-              <img src={profile.image || '/default-avatar.svg'} className="user-img" alt="" />
-              <h4>{profile.username}</h4>
-              <p>{profile.bio}</p>
-              {mine ? (
-                <Link to="/settings" className="btn btn-sm btn-outline-secondary action-btn"><i className="ion-gear-a" />&nbsp;Edit Profile Settings</Link>
-              ) : (
-                <button className={`btn btn-sm ${profile.following ? 'btn-secondary' : 'btn-outline-secondary'} action-btn`} onClick={toggle}>
-                  <i className="ion-plus-round" />&nbsp;{profile.following ? 'Unfollow' : 'Follow'} {profile.username}
-                </button>
-              )}
-            </div>
+    <>
+      <header className="profile-head">
+        <div className="wrap">
+          <Avatar user={profile} size={88} />
+          <div>
+            <h1>{profile.username}</h1>
+            {profile.bio && <p>{profile.bio}</p>}
+          </div>
+          <div className="actions">
+            {mine ? (
+              <Link to="/settings" className="btn btn-sm btn-secondary"><Icon name="pen" /> Edit profile</Link>
+            ) : (
+              <button className={`btn btn-sm ${profile.following ? 'btn-on' : 'btn-secondary'}`} onClick={toggle} aria-pressed={profile.following}>
+                {profile.following ? <><Icon name="check" /> Following</> : <><Icon name="plus" /> Follow {profile.username}</>}
+              </button>
+            )}
           </div>
         </div>
+      </header>
+      <div className="wrap profile-body">
+        <nav className="tabs" aria-label="Articles">
+          <Link className={`tab${!favorites ? ' on' : ''}`} aria-current={!favorites ? 'page' : undefined} to={`/profile/${username}`}>Articles</Link>
+          <Link className={`tab${favorites ? ' on' : ''}`} aria-current={favorites ? 'page' : undefined} to={`/profile/${username}/favorites`}>Favorites</Link>
+        </nav>
+        <ArticleList state={state} setState={setState} page={page} setPage={setPage} pageSize={PAGE}
+          empty={favorites ? `${profile.username} has not favorited anything yet.` : `${profile.username} has not published anything yet.`} />
       </div>
-      <div className="container">
-        <div className="row">
-          <div className="col-xs-12 col-md-10 offset-md-1">
-            <div className="articles-toggle">
-              <ul className="nav nav-pills outline-active">
-                <li className="nav-item"><Link className={`nav-link${!favorites ? ' active' : ''}`} to={`/profile/${username}`}>My Articles</Link></li>
-                <li className="nav-item"><Link className={`nav-link${favorites ? ' active' : ''}`} to={`/profile/${username}/favorites`}>Favorited Articles</Link></li>
-              </ul>
-            </div>
-            <ArticleList state={state} setState={setState} page={page} setPage={setPage} pageSize={PAGE} />
-          </div>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, formatDate } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useNavigate } from 'react-router-dom';
+import { Avatar, Tag } from './Postal';
+import Icon from './Icon';
 
 export function FavoriteButton({ article, onChange, big }) {
   const { user } = useAuth();
@@ -16,57 +17,61 @@ export function FavoriteButton({ article, onChange, big }) {
       onChange?.(r.article);
     } finally { setBusy(false); }
   };
-  const cls = `btn btn-sm ${article.favorited ? 'btn-primary' : 'btn-outline-primary'}${big ? '' : ' pull-xs-right'}`;
+  const label = article.favorited ? 'Remove from favorites' : 'Add to favorites';
   return (
-    <button className={cls} onClick={toggle} disabled={busy}>
-      <i className="ion-heart" />
-      {big ? <>&nbsp;{article.favorited ? 'Unfavorite' : 'Favorite'} Article <span className="counter">({article.favoritesCount})</span></> : <> {article.favoritesCount}</>}
+    <button className={`btn btn-sm fav ${article.favorited ? 'btn-on' : 'btn-secondary'}`} onClick={toggle} disabled={busy}
+      aria-pressed={article.favorited} aria-label={big ? undefined : `${label} (${article.favoritesCount})`}>
+      <Icon name="heart" />
+      {big && <span>{article.favorited ? 'Favorited' : 'Favorite'}</span>}
+      <span className="count">{article.favoritesCount}</span>
     </button>
   );
 }
 
-export function ArticlePreview({ article, onChange }) {
+export function ArticlePreview({ article, onChange, onTag }) {
   const a = article;
+  const replies = a.commentsCount === 1 ? '1 comment' : `${a.commentsCount || 0} comments`;
   return (
-    <div className="article-preview">
-      <div className="article-meta">
-        <Link to={`/profile/${a.author.username}`}><img src={a.author.image || '/default-avatar.svg'} alt="" /></Link>
-        <div className="info">
-          <Link to={`/profile/${a.author.username}`} className="author">{a.author.username}</Link>
-          <span className="date">{formatDate(a.createdAt)}</span>
+    <article className="letter">
+      <div>
+        <div className="from">
+          <Avatar user={a.author} size={26} />
+          <span>From <Link to={`/profile/${a.author.username}`}>{a.author.username}</Link> · {formatDate(a.createdAt)} · {replies}</span>
         </div>
-        <FavoriteButton article={a} onChange={onChange} />
+        <h2><Link to={`/article/${a.slug}`}>{a.title}</Link></h2>
+        {a.description && <p>{a.description}</p>}
+        {a.tagList.length > 0 && (
+          <div className="tags">{a.tagList.map((t) => <Tag key={t} name={t} onClick={onTag ? () => onTag(t) : undefined} />)}</div>
+        )}
       </div>
-      <Link to={`/article/${a.slug}`} className="preview-link">
-        <h1>{a.title}</h1>
-        <p>{a.description}</p>
-        <span>Read more...</span>
-        {a.commentsCount > 0 && <span className="comments-count" title="comentários (contador atualizado por eventos do RabbitMQ)">💬 {a.commentsCount}</span>}
-        <ul className="tag-list">
-          {a.tagList.map((t) => <li key={t} className="tag-default tag-pill tag-outline">{t}</li>)}
-        </ul>
-      </Link>
-    </div>
+      <div className="letter-side"><FavoriteButton article={a} onChange={onChange} /></div>
+    </article>
   );
 }
 
-export function ArticleList({ state, setState, page, setPage, pageSize }) {
-  if (state.error) return <div className="article-preview error-messages">Não foi possível carregar os artigos ({state.error}).</div>;
-  if (state.loading) return <div className="article-preview">Loading articles...</div>;
-  if (!state.articles.length) return <div className="article-preview empty-feed-message">No articles are here... yet.</div>;
+function Skeleton() {
+  return Array.from({ length: 3 }, (_, i) => (
+    <div className="letter" key={i} aria-hidden="true">
+      <div><span className="skeleton short" /><span className="skeleton title" /><span className="skeleton line" /></div>
+    </div>
+  ));
+}
+
+export function ArticleList({ state, setState, page, setPage, pageSize, empty, onTag }) {
+  if (state.error) return <p className="state">The articles could not be loaded ({state.error}). The articles service may be restarting; try again in a moment.</p>;
+  if (state.loading) return <><Skeleton /><span className="sr-only" role="status">Loading articles</span></>;
+  if (!state.articles.length) return <p className="state">{empty || 'No articles here yet.'}</p>;
   const pages = Math.ceil(state.count / pageSize);
   const replace = (updated) => setState((s) => ({ ...s, articles: s.articles.map((x) => (x.slug === updated.slug ? updated : x)) }));
   return (
     <>
-      {state.articles.map((a) => <ArticlePreview key={a.slug} article={a} onChange={replace} />)}
+      {state.articles.map((a) => <ArticlePreview key={a.slug} article={a} onChange={replace} onTag={onTag} />)}
       {pages > 1 && (
-        <ul className="pagination">
-          {Array.from({ length: Math.min(pages, 20) }, (_, i) => (
-            <li key={i} className={`page-item${i === page ? ' active' : ''}`}>
-              <button className="page-link" onClick={() => setPage(i)}>{i + 1}</button>
-            </li>
-          ))}
-        </ul>
+        <nav className="pager" aria-label="Pages">
+          <button className="btn btn-sm btn-secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Newer</button>
+          <span className="pager-pos">Page <b>{page + 1}</b> of {pages}</span>
+          <button className="btn btn-sm btn-secondary" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Older</button>
+        </nav>
       )}
     </>
   );

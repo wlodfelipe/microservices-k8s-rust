@@ -130,6 +130,7 @@ pub async fn overview(State(ops): State<Ops>) -> Result<Json<Value>, (StatusCode
         "events": live_total("events"),
         "delivered": live_total("delivered"),
     });
+    let bus_history = traffic.bus_history.clone();
 
     let pod_list: Vec<Value> = pods["items"]
         .as_array()
@@ -323,6 +324,6 @@ pub async fn overview(State(ops): State<Ops>) -> Result<Json<Value>, (StatusCode
         "nodes": node_list,
         "quota": quota,
         "metricsAvailable": !pod_metrics.is_null(),
-        "messaging": { "broker": broker, "services": bus, "live": live },
+        "messaging": { "broker": broker, "services": bus, "live": live, "history": bus_history },
     })))
 }

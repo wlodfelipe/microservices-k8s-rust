@@ -1,4 +1,5 @@
 // Cliente da API RealWorld (/api) e do monitor (/ops). Mesmo domínio: o nginx faz o proxy.
+import { recordDelivery } from './delivery';
 
 const TOKEN_KEY = 'jwtToken';
 
@@ -30,11 +31,13 @@ export async function request(method, path, body) {
   const token = getToken();
   if (token) headers.Authorization = `Token ${token}`;
   let res;
+  const t0 = performance.now();
   try {
     res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   } catch (e) {
-    throw new ApiError(0, { errors: { rede: ['indisponível'] } });
+    throw new ApiError(0, { errors: { network: ['unreachable'] } });
   }
+  if (path.startsWith('/api/') && !path.startsWith('/api/_meta')) recordDelivery(res, performance.now() - t0);
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
@@ -86,6 +89,6 @@ export const ops = {
 
 export function formatDate(iso) {
   try {
-    return new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   } catch { return iso; }
 }

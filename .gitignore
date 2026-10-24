@@ -4,3 +4,9 @@ web/dist/
 *.tar
 .env
 enunciado_facul.txt
+
+.taste-skill/
+.impeccable/
+
+DESIGN.md
+PRODUCT.md

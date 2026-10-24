@@ -36,6 +36,21 @@ pub struct Point {
     pub p95_ms: Option<u64>,
 }
 
+/// Eventos por segundo na mensageria (somados em todos os pods) e o que está parado na
+/// outbox. É o gráfico da seção Messaging: desligar o RabbitMQ faz a outbox subir.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BusPoint {
+    pub t: i64,
+    /// gravados na outbox e publicados no exchange
+    pub published: f64,
+    /// processados pelos consumidores dos serviços (articles, comments)
+    pub consumed: f64,
+    /// recebidos pelos pods do gateway para os WebSockets
+    pub live: f64,
+    pub outbox: i64,
+}
+
 /// Réplicas de um Deployment com HPA num instante: é a linha do tempo do autoscaling.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +67,7 @@ struct Prev {
     requests: u64,
     errors: u64,
     buckets: Vec<u64>,
+    bus: [u64; 3],
 }
 
 #[derive(Default)]
@@ -60,6 +76,7 @@ pub struct Traffic {
     pub pods: HashMap<String, PodTraffic>,
     pub history: HashMap<String, VecDeque<Point>>,
     pub scale: HashMap<String, VecDeque<ScalePoint>>,
+    pub bus_history: VecDeque<BusPoint>,
 }
 
 pub type Shared = Arc<Mutex<Traffic>>;
@@ -157,6 +174,7 @@ async fn tick(kube: &Kube, http: &reqwest::Client, shared: &Shared) -> anyhow::R
     let mut t = shared.lock().unwrap();
     let mut per_app: HashMap<String, (f64, f64, Vec<u64>, Vec<u64>)> = HashMap::new();
     let mut seen = Vec::new();
+    let (mut bus_rate, mut outbox) = ([0.0f64; 3], HashMap::<String, i64>::new());
     for (name, app, v) in results {
         let Some(v) = v else { continue };
         let s = &v["stats"];
@@ -166,9 +184,19 @@ async fn tick(kube: &Kube, http: &reqwest::Client, shared: &Shared) -> anyhow::R
         let bounds: Vec<u64> = s["buckets_ms"].as_array().map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
         let bus = Some(v["bus"].clone()).filter(|b| !b.is_null());
         let live = Some(v["live"].clone()).filter(|b| !b.is_null());
+        let counter = |v: &Option<Value>, k: &str| v.as_ref().and_then(|b| b[k].as_u64()).unwrap_or(0);
+        let bus_now = [counter(&bus, "published"), counter(&bus, "consumed"), counter(&live, "events")];
+        if let Some(b) = &bus {
+            // a outbox é uma tabela só por serviço: vale o maior valor visto entre as réplicas
+            let o = outbox.entry(app.clone()).or_default();
+            *o = (*o).max(b["outboxPending"].as_i64().unwrap_or(0));
+        }
         let mut pt = PodTraffic { in_flight: s["in_flight"].as_u64().unwrap_or(0), total: requests, bus, live, ..Default::default() };
         if let Some(prev) = t.prev.get(&name) {
             let dt = now.duration_since(prev.at).as_secs_f64().max(0.001);
+            for i in 0..3 {
+                bus_rate[i] += bus_now[i].saturating_sub(prev.bus[i]) as f64 / dt;
+            }
             if requests >= prev.requests {
                 let d: Vec<u64> = buckets.iter().zip(prev.buckets.iter().chain(std::iter::repeat(&0))).map(|(a, b)| a.saturating_sub(*b)).collect();
                 pt.rps = (requests - prev.requests) as f64 / dt;
@@ -184,7 +212,7 @@ async fn tick(kube: &Kube, http: &reqwest::Client, shared: &Shared) -> anyhow::R
                 }
             }
         }
-        t.prev.insert(name.clone(), Prev { at: now, requests, errors, buckets });
+        t.prev.insert(name.clone(), Prev { at: now, requests, errors, buckets, bus: bus_now });
         t.pods.insert(name.clone(), pt);
         seen.push(name);
     }
@@ -198,6 +226,11 @@ async fn tick(kube: &Kube, http: &reqwest::Client, shared: &Shared) -> anyhow::R
         while h.len() > HISTORY {
             h.pop_front();
         }
+    }
+    let [published, consumed, live] = bus_rate;
+    t.bus_history.push_back(BusPoint { t: ts, published, consumed, live, outbox: outbox.values().sum() });
+    while t.bus_history.len() > HISTORY {
+        t.bus_history.pop_front();
     }
     Ok(())
 }

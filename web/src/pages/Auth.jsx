@@ -24,32 +24,42 @@ export default function Auth({ mode }) {
   };
 
   return (
-    <div className="auth-page">
-      <div className="container page">
-        <div className="row">
-          <div className="col-md-6 offset-md-3 col-xs-12">
-            <h1 className="text-xs-center">{isLogin ? 'Sign in' : 'Sign up'}</h1>
-            <p className="text-xs-center">
-              {isLogin ? <Link to="/register">Need an account?</Link> : <Link to="/login">Have an account?</Link>}
-            </p>
-            <Errors error={error} />
-            <form onSubmit={submit}>
-              {!isLogin && (
-                <fieldset className="form-group">
-                  <input className="form-control form-control-lg" name="username" type="text" placeholder="Username" value={form.username} onChange={set('username')} />
-                </fieldset>
-              )}
-              <fieldset className="form-group">
-                <input className="form-control form-control-lg" name="email" type="email" placeholder="Email" value={form.email} onChange={set('email')} />
-              </fieldset>
-              <fieldset className="form-group">
-                <input className="form-control form-control-lg" name="password" type="password" placeholder="Password" value={form.password} onChange={set('password')} />
-              </fieldset>
-              <button className="btn btn-lg btn-primary pull-xs-right" disabled={busy}>{isLogin ? 'Sign in' : 'Sign up'}</button>
-            </form>
+    <div className="wrap auth">
+    <div className="form-page">
+      <h1>{isLogin ? 'Sign in' : 'Create an account'}</h1>
+      <p className="sub">
+        {isLogin ? <>New here? <Link to="/register">Create an account</Link></> : <>Already have one? <Link to="/login">Sign in</Link></>}
+      </p>
+      <form className="form" onSubmit={submit}>
+        <Errors error={error} />
+        {!isLogin && (
+          <div className="field">
+            <label htmlFor="username">Username</label>
+            <input id="username" className="input" name="username" autoComplete="username" value={form.username} onChange={set('username')} required />
           </div>
+        )}
+        <div className="field">
+          <label htmlFor="email">Email</label>
+          <input id="email" className="input" name="email" type="email" autoComplete="email" value={form.email} onChange={set('email')} required />
         </div>
-      </div>
+        <div className="field">
+          <label htmlFor="password">Password</label>
+          <input id="password" className="input" name="password" type="password" autoComplete={isLogin ? 'current-password' : 'new-password'} value={form.password} onChange={set('password')} required />
+        </div>
+        <div className="form-actions">
+          <span />
+          <button className="btn" disabled={busy}>{busy ? (isLogin ? 'Signing in…' : 'Creating…') : isLogin ? 'Sign in' : 'Create account'}</button>
+        </div>
+      </form>
+    </div>
+    <aside className="slip route" aria-labelledby="route-title">
+      <h3 id="route-title">Where your {isLogin ? 'sign-in' : 'sign-up'} goes</h3>
+      <ol>
+        <li><b>gateway</b><span>Receives the form and forwards it inside the cluster; the users service is never exposed outside it.</span></li>
+        <li><b>users</b><span>{isLogin ? 'Checks your password against its argon2 hash.' : 'Stores your password as an argon2 hash, never in plain text.'}</span></li>
+        <li><b>token</b><span>You get a signed JWT. The gateway checks it on every request and passes only your id to the other services.</span></li>
+      </ol>
+    </aside>
     </div>
   );
 }

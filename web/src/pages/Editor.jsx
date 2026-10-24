@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import Errors from '../components/Errors';
+import Icon from '../components/Icon';
 
 export default function Editor() {
   const { slug } = useParams();
@@ -21,9 +22,9 @@ export default function Editor() {
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const addTag = (e) => {
-    if (e.key !== 'Enter') return;
+    if (e.key !== 'Enter' && e.key !== ',') return;
     e.preventDefault();
-    const t = tagInput.trim();
+    const t = tagInput.trim().replace(/,$/, '');
     if (t && !form.tagList.includes(t)) setForm({ ...form, tagList: [...form.tagList, t] });
     setTagInput('');
   };
@@ -38,38 +39,44 @@ export default function Editor() {
   };
 
   return (
-    <div className="editor-page">
-      <div className="container page">
-        <div className="row">
-          <div className="col-md-10 offset-md-1 col-xs-12">
-            <Errors error={error} />
-            <form onSubmit={submit}>
-              <fieldset>
-                <fieldset className="form-group">
-                  <input type="text" name="title" className="form-control form-control-lg" placeholder="Article Title" value={form.title} onChange={set('title')} />
-                </fieldset>
-                <fieldset className="form-group">
-                  <input type="text" name="description" className="form-control" placeholder="What's this article about?" value={form.description} onChange={set('description')} />
-                </fieldset>
-                <fieldset className="form-group">
-                  <textarea name="body" className="form-control" rows="8" placeholder="Write your article (in markdown)" value={form.body} onChange={set('body')} />
-                </fieldset>
-                <fieldset className="form-group">
-                  <input type="text" className="form-control" placeholder="Enter tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={addTag} />
-                  <div className="tag-list">
-                    {form.tagList.map((t) => (
-                      <span key={t} className="tag-default tag-pill">
-                        <i className="ion-close-round" onClick={() => setForm({ ...form, tagList: form.tagList.filter((x) => x !== t) })} /> {t}
-                      </span>
-                    ))}
-                  </div>
-                </fieldset>
-                <button className="btn btn-lg pull-xs-right btn-primary" type="submit" disabled={busy}>Publish Article</button>
-              </fieldset>
-            </form>
-          </div>
+    <div className="wrap form-page wide">
+      <h1>{slug ? 'Edit article' : 'Write an article'}</h1>
+      <form className="form" onSubmit={submit}>
+        <Errors error={error} />
+        <div className="field">
+          <label htmlFor="title">Title</label>
+          <input id="title" className="input title" name="title" value={form.title} onChange={set('title')} />
         </div>
-      </div>
+        <div className="field">
+          <label htmlFor="description">Summary</label>
+          <input id="description" className="input read" name="description" value={form.description} onChange={set('description')} />
+          <span className="hint">One sentence. It shows under the title in the feed.</span>
+        </div>
+        <div className="field">
+          <label htmlFor="body">Article</label>
+          <textarea id="body" className="input read" name="body" rows="16" value={form.body} onChange={set('body')} />
+          <span className="hint">Markdown: headings, lists, links and code blocks.</span>
+        </div>
+        <div className="field">
+          <label htmlFor="tags">Tags</label>
+          <input id="tags" className="input" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={addTag} />
+          <span className="hint">Press Enter after each tag.</span>
+          {form.tagList.length > 0 && (
+            <div className="tags">
+              {form.tagList.map((t) => (
+                <button type="button" key={t} className="tag" aria-label={`Remove tag ${t}`}
+                  onClick={() => setForm({ ...form, tagList: form.tagList.filter((x) => x !== t) })}>
+                  {t}&nbsp;<Icon name="x" size={12} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="form-actions">
+          <button type="button" className="btn btn-ghost" onClick={() => nav(-1)}>Cancel</button>
+          <button className="btn" type="submit" disabled={busy}>{busy ? 'Publishing…' : slug ? 'Save changes' : 'Publish article'}</button>
+        </div>
+      </form>
     </div>
   );
 }

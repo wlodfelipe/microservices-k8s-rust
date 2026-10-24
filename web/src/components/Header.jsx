@@ -1,36 +1,38 @@
 import { NavLink, Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
+import { Avatar, Chevrons, Mark } from './Postal';
+import Icon from './Icon';
 
 const link = ({ isActive }) => `nav-link${isActive ? ' active' : ''}`;
 
 export default function Header() {
   const { user } = useAuth();
   return (
-    <nav className="navbar navbar-light">
-      <div className="container">
-        <Link className="navbar-brand" to="/">conduit</Link>
-        <ul className="nav navbar-nav pull-xs-right">
-          <li className="nav-item"><NavLink className={link} to="/" end>Home</NavLink></li>
+    <header className="masthead">
+      <Chevrons />
+      <div className="wrap">
+        <Link className="wordmark" to="/" aria-label="conduit, home"><Mark />conduit</Link>
+        <nav className="nav" aria-label="Main">
+          <NavLink className={link} to="/" end>Home</NavLink>
+          <NavLink className={link} to="/monitor">Monitor</NavLink>
+        </nav>
+        <div className="masthead-right">
           {user ? (
             <>
-              <li className="nav-item"><NavLink className={link} to="/editor"><i className="ion-compose" />&nbsp;New Article</NavLink></li>
-              <li className="nav-item"><NavLink className={link} to="/settings"><i className="ion-gear-a" />&nbsp;Settings</NavLink></li>
-              <li className="nav-item">
-                <NavLink className={link} to={`/profile/${user.username}`}>
-                  <img src={user.image || '/default-avatar.svg'} className="user-pic" alt="" />
-                  {user.username}
-                </NavLink>
-              </li>
+              <Link className="btn btn-sm" to="/editor"><Icon name="pen" /><span className="write-label">Write an article</span></Link>
+              <NavLink className={link} to="/settings">Settings</NavLink>
+              <NavLink className={({ isActive }) => `${link({ isActive })} me`} to={`/profile/${user.username}`}>
+                <Avatar user={user} size={28} /><span className="me-name">{user.username}</span>
+              </NavLink>
             </>
           ) : (
             <>
-              <li className="nav-item"><NavLink className={link} to="/login">Sign in</NavLink></li>
-              <li className="nav-item"><NavLink className={link} to="/register">Sign up</NavLink></li>
+              <NavLink className={link} to="/login">Sign in</NavLink>
+              <Link className="btn btn-sm" to="/register">Sign up</Link>
             </>
           )}
-          <li className="nav-item"><NavLink className={link} to="/monitor"><i className="ion-stats-bars" />&nbsp;Monitor</NavLink></li>
-        </ul>
+        </div>
       </div>
-    </nav>
+    </header>
   );
 }
